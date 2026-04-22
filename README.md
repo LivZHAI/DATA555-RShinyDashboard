@@ -32,4 +32,4 @@ The dashboard is built using **R** and the following packages: \* `flexdashboard
 
 To run this dashboard locally: 1. Ensure you have the `all_adpkd_1.csv` file in your working directory. 2. Open `DATA555-dashboard.Rmd` in RStudio. 3. Click **"Run Document"**.
 
-To open the dashboard from the website: [https://livzhai.shinyapps.io/final_project/](#0)
+To open the dashboard from the website: <https://livzhai.shinyapps.io/final_project/>
