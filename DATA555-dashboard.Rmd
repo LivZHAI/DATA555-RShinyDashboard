@@ -1,0 +1,914 @@
+---
+title: "Analysis of ED Primary Diagnosis Among ADPKD Patients"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+    theme: flatly
+runtime: shiny
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{css}
+
+/* ── Value Box icon positioning ── */
+.value-box .icon i {
+  position: absolute !important;
+  top: auto !important;
+  bottom: 10px !important;
+  right: 15px !important;
+  font-size: 100px !important;
+}
+.value-box .inner {
+  padding-bottom: 60px !important;
+  display: block !important;
+}
+.value-box {
+  overflow: hidden !important;
+}
+
+/* ── Global color palette ──
+   Primary   : #2A6F7F  (deep teal)
+   Secondary : #4CAABC  (medium teal)
+   Accent    : #E07B54  (warm coral)
+   Light bg  : #EEF6F8  (pale teal wash)
+   Dark text : #1D3340  (near-black navy)
+*/
+
+/* Navbar */
+.navbar {
+  background-color: #1D3340 !important;
+}
+.navbar-brand, .navbar .nav > li > a {
+  color: #EEF6F8 !important;
+}
+.navbar .nav > li > a:hover {
+  color: #4CAABC !important;
+}
+
+/* Value boxes */
+.value-box.bg-primary,
+.value-box[style*="background: rgb"] {
+  background-color: #2A6F7F !important;
+}
+
+/* Tab headers */
+.nav-tabs > li.active > a,
+.nav-tabs > li.active > a:focus,
+.nav-tabs > li.active > a:hover {
+  color: #2A6F7F !important;
+  border-top: 3px solid #2A6F7F !important;
+  font-weight: 700;
+}
+
+/* ── Introduction tab styling ── */
+.intro-card {
+  background: #EEF6F8;
+  border-left: 5px solid #2A6F7F;
+  border-radius: 6px;
+  padding: 18px 22px;
+  margin-bottom: 16px;
+}
+.intro-card h4 {
+  color: #2A6F7F;
+  font-weight: 700;
+  margin-top: 0;
+}
+.intro-card h5 {
+  color: #2A6F7F;
+  font-weight: 700;
+  margin-top: 0;
+  font-size: 1.9rem;
+}
+.intro-hero {
+  background: linear-gradient(135deg, #1D3340 0%, #2A6F7F 60%, #4CAABC 100%);
+  color: #EEF6F8;
+  border-radius: 8px;
+  padding: 28px 30px 22px;
+  margin-bottom: 20px;
+}
+.intro-hero h3 {
+  margin-top: 0;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+}
+.intro-hero p {
+  margin-bottom: 0;
+  opacity: 0.88;
+  line-height: 1.65;
+}
+.badge-stat {
+  display: inline-block;
+  background: rgba(255,255,255,0.18);
+  border-radius: 20px;
+  padding: 4px 14px;
+  font-size: 0.85rem;
+  margin: 4px 4px 0 0;
+  font-weight: 600;
+}
+```
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(readr)
+library(DT)
+library(tidyverse)
+library(lubridate)
+library(plotly)
+library(gridExtra)
+library(forcats)
+library(patchwork)
+```
+
+```{r import-data, include = FALSE}
+
+#setwd("/Users/livz/Desktop/DATA555/dashboard_project/dashboard")
+df <- read_csv("all_adpkd_1.csv")
+df <- df %>%
+  mutate(icd_title = str_to_title(icd_title)) 
+df_baseline <- df %>%
+  arrange(subject_id, current_age) %>%
+  group_by(subject_id) %>%
+  mutate(max_seq_num = last(seq_num)) %>% 
+  dplyr::slice(1) %>%
+  ungroup()
+
+
+# ── Palette used in all charts ──────────────────────────────────────────
+pal_main    <- "#2A6F7F"
+pal_coral   <- "#E07B54"
+pal_teal2   <- "#4CAABC"
+pal_navy    <- "#1D3340"
+pal_set     <- c("#2A6F7F","#4CAABC","#E07B54","#5BA89A","#D4A96A",
+                 "#7B5EA7","#E5C07B","#56B6C2","#C678DD","#98C379",
+                 "#E06C75","#61AFEF")
+
+```
+
+# Overview
+
+## row {.tabset .tabset-fade}
+
+### Introduction to Project
+```{r}
+div(
+  # ── Hero banner ──────────────────────────────────────────────────────
+  div(class = "intro-hero",
+    tags$h3("🏥 Briefing of Dashboard"),
+    tags$p(
+      "This dashboard explores patterns of Emergency Department (ED) primary diagnoses 
+       among patients with Autosomal Dominant Polycystic Kidney Disease (ADPKD), 
+       drawing on filtered data from the MIMIC-IV and MIMIC-IV-ED databases. The primary objective of this dashboard is to systematically identify and characterize the leading causes for which patients with ADPKD seek emergency care, with the aim of informing more efficient resource allocation by emergency and hospital clinicians."
+    )
+  ),
+
+  # ── What is ADPKD? ───────────────────────────────────────────────────
+  div(class = "intro-card",
+    tags$h4("🔬 What is ADPKD? Why the research is important?"),
+    tags$p(
+      "Autosomal Dominant Polycystic Kidney Disease (ADPKD) is the most common 
+       hereditary kidney disorder, characterized by the progressive growth of 
+       fluid-filled cysts in the kidneys. It frequently leads to hypertension, 
+       chronic kidney disease, and end-stage renal disease (ESRD), generating 
+       recurring and complex ED presentations."),
+    tags$p(
+      "ED utilization among patients with chronic kidney disease (CKD) represents a substantial and growing healthcare burden. CKD patients presenting to the ED constitute a medically complex population with significant morbidity and resource needs. As one of causes of CKD, ADPKD has a unique clinical profile, while there is a significant research gap: we don’t fully understand why these specific patients visit ED or what happens to them once they arrive. Therefore, exploring leading diagnoses in ADPKD ED presentations is both clinically necessary and a clear research gap."
+    )
+  ),
+
+  # ── Data Sources ─────────────────────────────────────────────────────
+  div(class = "intro-card",
+    tags$h4("🗄️ Data Sources"),
+    tags$p(
+      tags$b("MIMIC-IV"), " — a large, de-identified electronic health records 
+       database from Beth Israel Deaconess Medical Center (2008–2019). Provides 
+       clinical notes, lab results, diagnoses, and demographics. MIMIC-IV contains data for over 65,000 patients admitted to an ICU and over 200,000 patients admitted to the emergency department."
+    ),
+    tags$p(
+      tags$b("MIMIC-IV-ED"), " —  a module of MIMIC-IV covering emergency department 
+       encounters, including Vital signs, triage information, medication reconciliation, medication administration, and discharge diagnoses. The database contains ~425,000 ED stays. "
+    )
+  ),
+
+  # ── How to use this dashboard ────────────────────────────────────────
+  div(class = "intro-card",
+    tags$h4("📊 How to Navigate This Dashboard"),
+    tags$ul(
+      tags$li(tags$b("Overview › Dataset Glance"), " — (Top) Download dataset; (Bottom Left) Summarize fundamental information of the sample; (Bottom Right) Demographic breakdown via an interactive pie chart."),
+      tags$li(tags$b("Plots › General Leading Diagnosis"), " — Top-N most frequent primary diagnoses across all ED visits."),
+      tags$li(tags$b("Plots › Stacked Bar Chart"), " — Diagnosis counts split by demographic variables."),
+      tags$li(tags$b("Plots › Slope Graph"), " — Rank changes for diagnoses across binary variable groups.")
+    )
+  ),
+  div(class = "intro-card",
+    tags$h5("⛓️ Link to GitHub"),
+    tags$p(
+      "Direct to https://github.com/LivZHAI/DATA555-RShinyDashboard to get source code and the dataset." 
+    )
+  )
+)
+```
+
+
+### Dataset Glance
+
+```{r}
+fluidPage(
+fluidRow(
+  style = "min-height: 400px; margin-top: 4px;",
+  column(12,
+    div(style = "display: flex; align-items: center; gap: 16px;
+                 margin-bottom: 8px; margin-top: 4px; overflow: visible;",
+      div(style = "font-weight: 700; font-size: 2rem; color: #2A6F7F;
+                   white-space: nowrap;",
+        "Applied Dataset Preview"
+      ),
+      # Slider
+      div(style = "flex: 1; margin-bottom: -15px; overflow: visible;",
+        sliderInput("table_rows", label = NULL,
+                    min = 1, max = 985, value = 400,
+                    step = NULL,
+                    ticks = TRUE,
+                    width = "100%")
+      ),
+      # Search
+      div(style = "flex: 1; margin-bottom: -15px; overflow: visible;",
+        textInput("table_search", label = NULL,
+                  placeholder = "🔍 Search...", width = "100%")
+      ),
+      # Export
+      div(style = "flex: 1; display: flex; align-items: center;",
+        downloadButton("export_csv", "⬇ Export CSV",
+                       style = "background: #2A6F7F; color: #fff;
+                                border: none; border-radius: 5px;
+                                padding: 5px 12px; font-size: 1rem;
+                                height: 34px; line-height: 24px;
+                                cursor: pointer; width: 100%;
+                                text-align: center;")
+      )
+    ),
+     div(style = "height: 340px; overflow-y: auto; overflow-x: hidden;",
+      DTOutput("data_table")
+    )
+  )
+),
+
+  hr(style = "border-color: #c8dde2; margin: 8px 0;"),
+
+
+  fluidRow(
+    style = "height: calc(100vh - 480px); min-height: 200px; overflow: hidden;",
+      column(4,
+    style = "height: 80%; padding-right: 10px; overflow: hidden;",
+    div(style = "display: flex; flex-direction: column;
+                 height: 100%; gap: 6px; overflow: hidden;",
+
+      div(style = "flex: 0 0 40px; font-weight: 700; font-size: 2rem;
+                   color: #2A6F7F; line-height: 40px;",
+        "Key Values"
+      ),
+        
+        # Patients
+        div(style = "background: #2A6F7F; color: #fff; border-radius: 8px;
+                     padding: 8px 14px; flex: 1; position: relative; overflow: hidden;",
+          div(style = "font-size: 4rem; font-weight: 800; line-height: 1.15;",
+            textOutput("n_patients", inline = TRUE)
+          ),
+          div(style = "font-size: 1.5rem; opacity: 0.88; margin-top: 2px;",
+            "Total Patients"
+          ),
+          div(style = "position: absolute; right: 10px; bottom: 4px;
+                       font-size: 2.2rem; opacity: 0.18;",
+            icon("users")
+          )
+        ),
+
+        # Stays
+        div(style = "background: #4CAABC; color: #fff; border-radius: 8px;
+                     padding: 8px 14px; flex: 1; position: relative; overflow: hidden;",
+          div(style = "font-size: 4rem; font-weight: 800; line-height: 1.15;",
+            textOutput("n_stays", inline = TRUE)
+          ),
+          div(style = "font-size: 1.5rem; opacity: 0.88; margin-top: 2px;",
+            "Total ED Stays"
+          ),
+          div(style = "position: absolute; right: 10px; bottom: 4px;
+                       font-size: 2.2rem; opacity: 0.18;",
+            icon("ambulance")
+          )
+        ),
+
+        # Records
+        div(style = "background: #E07B54; color: #fff; border-radius: 8px;
+                     padding: 8px 14px; flex: 1; position: relative; overflow: hidden;",
+          div(style = "font-size: 4rem; font-weight: 800; line-height: 1.15;",
+            textOutput("n_records", inline = TRUE)
+          ),
+          div(style = "font-size: 1.5rem; opacity: 0.88; margin-top: 2px;",
+            "The Number of Unique Diagnosis"
+          ),
+          div(style = "position: absolute; right: 10px; bottom: 4px;
+                       font-size: 2.2rem; opacity: 0.18;",
+            icon("database")
+          )
+        )
+      )
+    ),
+
+
+column(8,
+  style = "height: 80%; overflow: hidden;",
+  div(style = "display: flex; align-items: center; justify-content: space-between;
+               height: 40px; margin-bottom: 2px; overflow: visible;",
+    div(style = "font-weight: 700; font-size: 2rem; color: #2A6F7F;
+                 white-space: nowrap; line-height: 40px;",
+      "Demographic Distribution"
+    ),
+    div(style = "flex: 0 0 200px; overflow: visible;",
+      tags$div(
+        style = "margin-bottom: -15px;",
+        selectInput(
+          "var", label = NULL,
+          choices = c(
+            "Gender"                        = "gender",
+            "Race"                          = "race",
+            "Age Group"                     = "age_group",
+            "End Stage Renal Disease"                          = "end_stage_renal_disease",
+            "Kidney Transplant"             = "kidney_transplant_status"
+          ),
+          width = "100%"
+        )
+      )
+    )
+  ),
+  div(style = "display: flex; justify-content: flex-end;
+             height: calc(100% - 48px);",
+  plotlyOutput("pie_chart", height = "100%", width = "100%")
+)
+)
+)
+)
+```
+
+```{r}
+# ── Table ─────────────────────────────────────────────────────────────
+filtered_df <- reactive({
+  d <- df
+  
+  if (!is.null(input$table_search) && nchar(trimws(input$table_search)) > 0) {
+    kw <- trimws(input$table_search)
+    mask <- apply(d, 1, function(row) any(grepl(kw, row, ignore.case = TRUE)))
+    d <- d[mask, ]
+  }
+
+  n <- min(input$table_rows, nrow(d))
+  d <- head(d, n)
+  
+  return(d)
+})
+
+output$data_table <- renderDT({
+  datatable(
+    filtered_df(),
+    options = list(
+      pageLength   = 8,
+      lengthMenu   = c(5, 8, 15, 25, 50),
+      scrollX      = TRUE,
+      dom          = "tip", 
+      initComplete = JS(
+        "function(settings, json) {",
+        "  $(this.api().table().header()).css({",
+        "    'background-color': '#2A6F7F',",
+        "    'color': '#ffffff',",
+        "    'font-size': '1.3rem'",
+        "  });",
+        "}"
+      )
+    ),
+    rownames = FALSE,
+    class    = "stripe hover compact"
+  )
+})
+
+output$export_csv <- downloadHandler(
+  filename = function() {
+    paste0("ADPKD_data_", Sys.Date(), ".csv")
+  },
+  content = function(file) {
+    write.csv(filtered_df(), file, row.names = FALSE, fileEncoding = "UTF-8")
+  }
+)
+
+# ── Summary cards ────────────────────────────────────────────────────
+output$n_patients <- renderText({ length(unique(df$subject_id)) })
+output$n_stays    <- renderText({ length(unique(df$stay_id))    })
+output$n_records  <- renderText({ length(unique(df$icd_title))  })
+
+# ── Pie chart ────────────────────────────────────────────────────────
+output$pie_chart <- renderPlotly({
+  req(input$var)
+
+  plot_data <- df_baseline %>%
+    dplyr::count(.data[[input$var]], name = "n") %>%
+    dplyr::rename(value = 1) %>%
+    dplyr::mutate(rate = n / sum(n))
+  
+  if (input$var == "race") {
+    plot_data <- plot_data %>%
+      mutate(value = case_when(
+        value == "OTHER"                    ~ "OTHER (includes Asian, American Indian or Alaska Native, 
+        Native Hawaiian or Other Pacific Islander, 
+        and individuals not classified as Black or White)",
+        TRUE                                ~ value 
+      ))
+  }
+
+  n_cats       <- nrow(plot_data)
+  slice_colors <- pal_set[seq_len(min(n_cats, length(pal_set)))]
+  
+  annotations <- if (input$var == "race") {
+    list(list(
+      x          = 0.5,
+      y          = -0.12,
+      text       = "OTHER includes Asian, American Indian or Alaska Native, Native Hawaiian or Other Pacific Islander, and the individuals not classified as Black or White.",
+      showarrow  = FALSE,
+      xref       = "paper",
+      yref       = "paper",
+      font       = list(size = 11, color = "#6B7280"),
+      align      = "center"
+    ))
+  } else {
+    list()
+  }
+
+  plot_ly(
+    plot_data,
+    labels   = ~value,
+    values   = ~n,
+    type     = "pie",
+    hole     = 0.45,
+    marker   = list(colors = slice_colors,
+                    line   = list(color = "#FFFFFF", width = 2)),
+    insidetextorientation = "horizontal",
+    hovertemplate = "<b>%{label}</b><br>Count: %{value}<br>Rate: %{percent}<extra></extra>",
+    domain   = list(x = c(0, 0.55), y = c(0, 1))
+  ) %>%
+    layout(
+      margin     = list(l = 10, r = 10, t = 10, b = 10),
+      showlegend = TRUE,
+      legend     = list(
+        y       = 0.5,
+        x       = 0.58,
+        yanchor = "middle",
+        font    = list(color = "#1D3340", size = 11)
+      ),
+      paper_bgcolor = "transparent",
+      plot_bgcolor  = "transparent"
+    ) %>%
+    config(responsive = TRUE, displayModeBar = FALSE)
+})
+```
+
+# Plots
+
+## row {.tabset .tabset-fade}
+
+### General Leading Diagnosis
+
+```{r}
+fluidRow(
+  column(3,
+    div(style = "padding-right: 10px;",
+      sliderInput("top_n", "Top N:", min = 10, max = 50, value = 15, step = 5,
+                  width = "100%"),
+      numericInput("wrap_width_input", "Wrap Width (y-axis text width):",
+                   value = 40, width = "100%"),
+      actionButton("update_btn", "Apply Changes", class = "btn-primary",
+                   style = "width: 100%; margin-bottom: 16px;"),
+      hr(style = "border-color: #c8dde2; margin: 8px 0;"),
+      div(style = "background: #EEF6F8; border-left: 4px solid #2A6F7F;
+                   border-radius: 5px; padding: 12px 14px;
+                   font-size: 1.5rem; color: #1D3340; line-height: 1.6;",
+        tags$b("📝 About this chart"),
+        tags$br(),
+        "This bar chart displays the most frequent primary diagnoses across all 
+         ED visits for ADPKD patients. The x-axis represents the count of the diagnoses. Use ",
+        tags$b("Top N"), " to control how many diagnoses are shown, and ",
+        tags$b("Wrap Width"), " to adjust the y-axis label wrapping so that the texts could be shown clearly, especially increse wrap width when Top N is large."
+      )
+    )
+  ),
+
+column(9,
+  plotlyOutput("bar_plot", height = "800px")
+)
+)
+```
+
+```{r}
+
+render_interactive_bar <- function(data, top_n, wrap_width) {
+  summary_data <- data %>%
+    mutate(icd_title = str_to_title(icd_title)) %>%
+    group_by(icd_title) %>%
+    summarise(Count = n(), .groups = "drop") %>%
+    arrange(desc(Count)) %>%
+    slice_head(n = top_n) %>%
+    mutate(
+      Percentage    = (Count / sum(Count)) * 100,
+      hover_text    = paste0("Diagnosis: ", icd_title, "<br>",
+                             "Count: ", Count, "<br>",
+                             "Rate: ", sprintf("%.2f%%", Percentage)),
+      wrapped_title = str_wrap(icd_title, width = wrap_width),
+      wrapped_title = fct_reorder(wrapped_title, Count)
+    )
+
+  p <- ggplot(summary_data, aes(x = Count, y = wrapped_title, text = hover_text)) +
+    geom_col(fill = pal_main) +
+    labs(title = NULL, x = "Count", y = NULL) +
+    theme_minimal(base_size = 12) +
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor   = element_blank(),
+      axis.text          = element_text(color = pal_navy)
+    )
+
+  bargap_val <- min(0.1 + (top_n - 10) * 0.015, 0.7)
+
+  ggplotly(p, tooltip = "text", height = 800) %>%
+    layout(
+      bargap = bargap_val,
+      margin = list(l = 10, r = 30, t = 50, b = 50),
+      yaxis  = list(
+        automargin = TRUE,
+        tickfont   = list(size = 12)
+      ),
+      title  = list(
+        text    = paste("Top", top_n, "Most Frequent Diagnoses"),
+        x       = 0.5,
+        xanchor = "center",
+        font    = list(color = pal_navy)
+      ),
+      paper_bgcolor = "transparent",
+      plot_bgcolor  = "transparent"
+    ) %>%
+    config(displayModeBar = FALSE)
+}
+
+params <- eventReactive(input$update_btn, {
+  list(n = input$top_n, width = input$wrap_width_input)
+}, ignoreNULL = FALSE)
+
+output$bar_plot <- renderPlotly({
+  p_info <- params()
+  render_interactive_bar(data = df, top_n = p_info$n, wrap_width = p_info$width)
+})
+```
+
+
+### Stacked Bar Chart
+
+```{r}
+fluidRow(
+  column(3,
+    div(style = "padding-right: 10px;",
+    selectInput("g2_var_stack", "Categorical Variable:",
+            choices = c(
+              "Race"             = "race",
+              "Age Group"        = "age_group",
+              "Gender"           = "gender",
+              "ESRD"             = "end_stage_renal_disease",
+              "Kidney Transplant" = "kidney_transplant_status"  
+            ),
+            width = "100%"),
+      sliderInput("top_n_stack", "Top N:",
+                  min = 10, max = 35, value = 15, step = 5, width = "100%"),
+      actionButton("update_stack", "Apply Changes", class = "btn-primary",
+                   style = "width: 100%; margin-bottom: 16px;"),
+      hr(style = "border-color: #c8dde2; margin: 8px 0;"),
+      div(style = "background: #EEF6F8; border-left: 4px solid #2A6F7F;
+                   border-radius: 5px; padding: 12px 14px;
+                   font-size: 1.5rem; color: #1D3340; line-height: 1.6;",
+        tags$b("📝 About this chart"),
+        tags$br(),
+        "This stacked bar chart shows the distribution of top diagnoses 
+         broken down by a selected demographic variable. Each bar segment 
+         represents a subgroup count. The x-axis represents the count of the diagnoses. Use",
+        tags$b("Categorical Variable"), "to select the variable for patients segment. Use",
+        tags$b("Top N"), "to control how many diagnoses are shown."
+      )
+    )
+  ),
+
+  column(9,
+    plotlyOutput("stacked_plot", height = "800px")
+  )
+)
+```
+
+```{r}
+stacked_data_obj <- eventReactive(input$update_stack, {
+  req(input$g2_var_stack)
+  current_g2 <- input$g2_var_stack
+  top_n_val  <- input$top_n_stack
+
+  overall_counts <- df %>%
+    mutate(icd_title = str_to_title(icd_title)) %>%
+    filter(!is.na(icd_title)) %>%
+    group_by(icd_title) %>%
+    summarise(Total_Count = n(), .groups = "drop") %>%
+    arrange(desc(Total_Count)) %>%
+    slice_head(n = top_n_val)
+
+  if (nrow(overall_counts) == 0) return(NULL)
+
+ordered_levels <- overall_counts %>%
+  arrange(Total_Count) %>%
+  mutate(icd_title = str_to_title(icd_title),
+         icd_title_wrapped = str_wrap(icd_title, width = 50)) %>%
+  pull(icd_title_wrapped)
+
+plot_df <- df %>%
+  mutate(icd_title = str_to_title(icd_title)) %>%
+  filter(!is.na(icd_title)) %>%
+  filter(icd_title %in% overall_counts$icd_title) %>%
+  group_by(icd_title, !!rlang::sym(current_g2)) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  left_join(overall_counts, by = "icd_title") %>%
+  mutate(Rate = scales::percent(Count / Total_Count, accuracy = 0.1)) %>%
+  group_by(icd_title) %>%
+  mutate(
+    all_groups_info   = paste0(.data[[current_g2]], ": ", Count,
+                               " (", Rate, ")", collapse = "<br>"),
+    hover_text        = paste0("<b>", icd_title, "</b><br>", all_groups_info),
+    icd_title_wrapped = str_wrap(icd_title, width = 50),
+    icd_title_wrapped = factor(icd_title_wrapped, levels = ordered_levels)
+  ) %>%
+  ungroup()
+
+  list(data = plot_df, g2 = current_g2, n = top_n_val)
+}, ignoreNULL = FALSE)
+
+pal_contrast <- c(
+  "#E07B54", "#2A6F7F", "#E5C07B", "#7B5EA7",
+  "#56B6C2", "#C678DD", "#98C379", "#E06C75",
+  "#61AFEF", "#D4A96A", "#4CAABC", "#FF7F50"
+)
+
+output$stacked_plot <- renderPlotly({
+  res <- stacked_data_obj()
+  if (is.null(res)) return(NULL)
+
+  bargap_val <- min(0.1 + (res$n - 10) * 0.015, 0.7)
+
+  p <- ggplot(res$data, aes(
+    y    = icd_title_wrapped,
+    x    = Count,
+    fill = .data[[res$g2]],
+    text = hover_text
+  )) +
+    geom_col(width = 0.7) +
+    scale_fill_manual(values = pal_contrast) +
+    labs(x = NULL, y = NULL, fill = str_to_title(res$g2)) +
+    theme_minimal(base_size = 12) +
+    theme(
+      legend.position   = "right",  # Changed from "none" to "right"
+      legend.title      = element_text(color = pal_navy, face = "bold", size = 10),
+      legend.text       = element_text(color = pal_navy, size = 9),
+      legend.key.size   = unit(0.6, "cm"),
+      legend.spacing.y  = unit(0.1, "cm"),
+      axis.text.y       = element_text(size = 9, color = pal_navy),
+      panel.grid.minor  = element_blank(),
+      panel.grid.major.y = element_blank() 
+    )
+
+ggplotly(p, tooltip = "text", height = 800) %>%
+  layout(
+    bargap = bargap_val,
+    title  = list(
+      text    = paste0("<b>The Distribution of Top ", res$n, " Diagnoses by ",
+                       str_to_title(res$g2), "</b>"),
+      x = 0.5, y = 0.98, xanchor = "center", yanchor = "top",
+      font = list(color = pal_navy)
+    ),
+    margin = list(t = 40, b = 60, l = 50, r = 80),
+    yaxis = list(
+  automargin = TRUE,
+  tickfont   = list(size = 11, color = pal_navy)
+),
+    legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.05),
+    paper_bgcolor = "transparent",
+    plot_bgcolor  = "transparent"
+  ) %>%
+  config(displayModeBar = FALSE)
+})
+```
+
+
+### Slope Graph
+
+```{r}
+plot_diagnosis_slope <- function(data, g1_var_name, g2_var_name,
+                                  g1_value, top_n = 10, wrap_width = 20,
+                                  block_half = 0.4,
+                                  text_size  = 3,
+                                  seg_size   = 1.0) {
+  g1_enquo <- rlang::sym(g1_var_name)
+  g2_enquo <- rlang::sym(g2_var_name)
+
+  summary_data <- data %>%
+    filter(!is.na(!!g1_enquo), !is.na(!!g2_enquo)) %>%
+    mutate(icd_title = stringr::str_to_title(icd_title)) %>%
+    filter(!!g1_enquo == g1_value) %>%
+    group_by(!!g1_enquo, !!g2_enquo, icd_title) %>%
+    summarise(Count = n(), .groups = "drop")
+
+  current_page <- summary_data %>%
+    group_by(!!g2_enquo) %>%
+    arrange(desc(Count)) %>%
+    slice_head(n = top_n) %>%
+    mutate(rank = row_number(), prop = Count / sum(Count) * 100) %>%
+    ungroup()
+
+  common_diagnoses <- current_page %>%
+    group_by(icd_title) %>%
+    filter(n() == 2) %>%
+    pull(icd_title) %>%
+    unique()
+
+  page_data <- current_page %>%
+    mutate(
+      ycenter     = rank,
+      color_group = ifelse(icd_title %in% common_diagnoses, icd_title, "Unique"),
+      label_text  = paste0("#", rank, " ",
+                           stringr::str_wrap(icd_title, width = wrap_width)),
+      hover_text  = paste0("<b>#", rank, " ", icd_title, "</b><br>",
+                           "Group: ", .data[[g2_var_name]], "<br>",
+                           "Count: ", Count, "<br>",
+                           "Proportion: ", sprintf("%.1f%%", prop))
+    )
+
+  n_common      <- length(common_diagnoses)
+  custom_colors <- c(pal_set[seq_len(min(n_common, length(pal_set)))], "Unique" = "#C8D8DC")
+  if (n_common > 0) names(custom_colors)[1:n_common] <- common_diagnoses
+
+  levels_g2 <- levels(factor(page_data %>% pull(!!g2_enquo)))
+  if (length(levels_g2) < 2) return(NULL)
+
+  g2_1 <- levels_g2[1]; g2_2 <- levels_g2[2]
+
+  line_data <- page_data %>%
+    filter(icd_title %in% common_diagnoses) %>%
+    select(icd_title, !!g2_enquo, ycenter, rank) %>%
+    pivot_wider(names_from = !!g2_enquo, values_from = c(ycenter, rank))
+
+  p <- ggplot()
+
+  if (nrow(line_data) > 0) {
+    line_data <- line_data %>%
+      mutate(
+        is_rising = .data[[paste0("rank_", g2_1)]] > .data[[paste0("rank_", g2_2)]],
+        line_type = ifelse(is_rising, "solid", "dashed")
+      )
+
+    p <- p +
+      annotate("text", x = 1, y = 0, label = levels_g2[1],
+               size = 5, fontface = "bold", vjust = -0.2, color = pal_navy) +
+      annotate("text", x = 2, y = 0, label = levels_g2[2],
+               size = 5, fontface = "bold", vjust = -0.2, color = pal_navy) +
+      geom_segment(data = line_data,
+                   aes(x = 1.3, xend = 1.7,
+                       y    = .data[[paste0("ycenter_", g2_1)]],
+                       yend = .data[[paste0("ycenter_", g2_2)]],
+                       linetype = line_type, color = icd_title),
+                   linewidth = seg_size,
+                   alpha = 0.75)
+  }
+
+  p <- p +
+    geom_rect(data = page_data,
+              aes(xmin = as.numeric(factor(!!g2_enquo)) - 0.3,
+                  xmax = as.numeric(factor(!!g2_enquo)) + 0.3,
+                  ymin = ycenter - block_half,
+                  ymax = ycenter + block_half,
+                  fill = color_group,
+                  text = hover_text),   
+              color = "white", linewidth = 0.5) +
+    geom_text(data = page_data,
+              aes(x = as.numeric(factor(!!g2_enquo)), y = ycenter,
+                  label = label_text),   
+              color = "grey20", size = text_size,
+              fontface = "bold", lineheight = 0.8) +
+    scale_fill_manual(values  = custom_colors) +
+    scale_color_manual(values = custom_colors) +
+    scale_linetype_identity() +
+    scale_y_reverse(expand = expansion(mult = c(0.05, 0.02))) +
+    scale_x_continuous(breaks = 1:2, labels = levels_g2,
+                       expand = expansion(mult = 0.5)) +
+    labs(title = paste("Top", top_n, "Diagnosis Rank Comparison by", g2_var_name),
+         x = "", y = "") +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title      = element_text(hjust = 0.5, size = 16, face = "bold",
+                                     color = pal_navy,
+                                     margin = margin(t = 0, b = 2)),
+      panel.grid      = element_blank(),
+      axis.text       = element_blank(),
+      legend.position = "none",
+      plot.margin     = margin(t = 0, r = 10, b = 70, l = 10)
+    )
+
+  return(p)
+}
+```
+
+```{r}
+fluidRow(
+  column(3,
+    div(style = "padding-right: 10px;",
+      selectInput("g2_var", "Binary Variable:",
+                  choices = c(
+                    "Gender"                   = "gender",
+                    "ESRD"                     = "end_stage_renal_disease",
+                    "Kidney Transplant Status" = "kidney_transplant_status"
+                  ),
+                  width = "100%"),
+      sliderInput("top_n_slope", "Top N:",
+                  min = 10, max = 25, value = 15, step = 5,
+                  width = "100%"),
+      actionButton("update_slope", "Apply Changes", class = "btn-primary",
+                   style = "width: 100%; margin-bottom: 16px;"),
+      hr(style = "border-color: #c8dde2; margin: 8px 0;"),
+      div(style = "background: #EEF6F8; border-left: 4px solid #2A6F7F;
+                   border-radius: 5px; padding: 12px 14px;
+                   font-size: 1.5rem; color: #1D3340; line-height: 1.6;",
+        tags$b("📝 About this chart"),
+        tags$br(),
+        "This slope graph compares the ranking of top diagnoses across two
+         groups of a selected binary variable. Connected lines show how each
+         diagnosis rank shifts between groups — solid lines indicate a rising
+         rank, dashed lines indicate a falling rank. Grey blocks indicate
+         diagnoses unique to one group, the same diagnosis is denoted by the
+         same color. Hover over blocks for count and proportion details. Use ",
+        tags$b("Binary Variable"), " to select the variable for comparison. Use ",
+        tags$b("Top N"), " to control how many diagnoses are shown."
+      )
+    )
+  ),
+  column(9,
+    plotlyOutput("slope_plot", height = "900px")  
+  )
+)
+```
+
+
+```{r}
+
+plot_params <- eventReactive(input$update_slope, {
+  list(g2_var = input$g2_var, top_n = input$top_n_slope)
+}, ignoreNULL = FALSE)
+
+output$slope_plot <- renderPlotly({
+  params <- plot_params()
+  top_n  <- params$top_n
+
+  block_half <- max(0.35, 0.55 - (top_n - 5) * 0.008)
+  text_size  <- max(2.5,  4.5  - (top_n - 5) * 0.12)
+  seg_size   <- max(0.5,  1.0  - (top_n - 5) * 0.02)
+
+  p <- plot_diagnosis_slope(
+    data        = df,
+    g1_var_name = "seq_num",
+    g2_var_name = params$g2_var,
+    g1_value    = 1,
+    top_n       = top_n,
+    wrap_width  = 25,
+    block_half  = block_half,
+    text_size   = text_size,
+    seg_size    = seg_size
+  )
+
+  if (is.null(p)) {
+    plotly_empty() %>%
+      layout(title = list(
+        text = "Please select a binary variable or check your data.",
+        font = list(color = pal_navy)
+      ))
+  } else {
+    ggplotly(p, tooltip = "text", height = 900) %>%
+      style(hoverinfo = "none", traces = which(sapply(ggplotly(p)$x$data, function(x) x$mode == "text"))) %>%
+      layout(
+        paper_bgcolor = "transparent",
+        plot_bgcolor  = "transparent",
+        showlegend    = FALSE
+      ) %>%
+      config(displayModeBar = FALSE)
+  }
+})
+```
+
+
+
