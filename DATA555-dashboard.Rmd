@@ -5,6 +5,8 @@ output:
     orientation: rows
     vertical_layout: fill
     theme: flatly
+    navbar:
+      - { title: "GitHub", href: "https://github.com/LivZHAI/DATA555-RShinyDashboard", align: right, icon: "fa-github" }
 runtime: shiny
 editor_options: 
   markdown: 
@@ -12,6 +14,7 @@ editor_options:
 ---
 
 ```{css}
+@import url("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css");
 
 /* ── Value Box icon positioning ── */
 .value-box .icon i {
@@ -48,6 +51,29 @@ editor_options:
   color: #4CAABC !important;
 }
 
+/* GitHub icon in navbar */
+.navbar-github {
+  position: absolute !important;
+  right: 16px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+}
+.navbar-github a {
+  color: #EEF6F8 !important;
+  font-size: 22px !important;
+  line-height: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  text-decoration: none !important;
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+.navbar-github a:hover {
+  opacity: 1;
+  color: #4CAABC !important;
+}
+
 /* Value boxes */
 .value-box.bg-primary,
 .value-box[style*="background: rgb"] {
@@ -75,12 +101,6 @@ editor_options:
   color: #2A6F7F;
   font-weight: 700;
   margin-top: 0;
-}
-.intro-card h5 {
-  color: #2A6F7F;
-  font-weight: 700;
-  margin-top: 0;
-  font-size: 1.9rem;
 }
 .intro-hero {
   background: linear-gradient(135deg, #1D3340 0%, #2A6F7F 60%, #4CAABC 100%);
@@ -111,6 +131,28 @@ editor_options:
 }
 ```
 
+```{r github-navbar, include=FALSE}
+# Inject GitHub icon into the navbar via JS + Font Awesome
+tags$head(
+  # Load Font Awesome for the GitHub icon
+  tags$link(
+    rel = "stylesheet",
+    href = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+  ),
+  tags$script(HTML("
+    $(document).ready(function() {
+      var ghLink = $('<div class=\"navbar-github\">' +
+        '<a href=\"https://github.com/LivZHAI/DATA555-RShinyDashboard\" ' +
+        '   target=\"_blank\" title=\"View on GitHub\">' +
+        '  <i class=\"fab fa-github\"></i>' +
+        '  <span style=\"font-size:13px; font-weight:600;\">GitHub</span>' +
+        '</a></div>');
+      $('.navbar').css('position', 'relative').append(ghLink);
+    });
+  "))
+)
+```
+
 ```{r setup, include=FALSE}
 library(flexdashboard)
 library(readr)
@@ -126,6 +168,8 @@ library(patchwork)
 ```{r import-data, include = FALSE}
 
 #setwd("/Users/livz/Desktop/DATA555/dashboard_project/dashboard")
+#rsconnect::deployApp()
+
 df <- read_csv("all_adpkd_1.csv")
 df <- df %>%
   mutate(icd_title = str_to_title(icd_title)) 
@@ -201,12 +245,6 @@ div(
       tags$li(tags$b("Plots › General Leading Diagnosis"), " — Top-N most frequent primary diagnoses across all ED visits."),
       tags$li(tags$b("Plots › Stacked Bar Chart"), " — Diagnosis counts split by demographic variables."),
       tags$li(tags$b("Plots › Slope Graph"), " — Rank changes for diagnoses across binary variable groups.")
-    )
-  ),
-  div(class = "intro-card",
-    tags$h5("⛓️ Link to GitHub"),
-    tags$p(
-      "Direct to https://github.com/LivZHAI/DATA555-RShinyDashboard to get source code and the dataset." 
     )
   )
 )
@@ -547,7 +585,7 @@ render_interactive_bar <- function(data, top_n, wrap_width) {
         tickfont   = list(size = 12)
       ),
       title  = list(
-        text    = paste("Top", top_n, "Most Frequent Diagnoses"),
+        text    = paste("Top", top_n, "Most Frequent Diagnoses (Based on 985 Visits)"),
         x       = 0.5,
         xanchor = "center",
         font    = list(color = pal_navy)
@@ -596,7 +634,7 @@ fluidRow(
         tags$br(),
         "This stacked bar chart shows the distribution of top diagnoses 
          broken down by a selected demographic variable. Each bar segment 
-         represents a subgroup count. The x-axis represents the count of the diagnoses. Use",
+         represents a subgroup count. The percentage shown in hover information means the proportion of the diagnosis within the selected grouping variable, not within the bar. The x-axis represents the count of the diagnoses. Use",
         tags$b("Categorical Variable"), "to select the variable for patients segment. Use",
         tags$b("Top N"), "to control how many diagnoses are shown."
       )
@@ -625,29 +663,44 @@ stacked_data_obj <- eventReactive(input$update_stack, {
 
   if (nrow(overall_counts) == 0) return(NULL)
 
-ordered_levels <- overall_counts %>%
-  arrange(Total_Count) %>%
-  mutate(icd_title = str_to_title(icd_title),
-         icd_title_wrapped = str_wrap(icd_title, width = 50)) %>%
-  pull(icd_title_wrapped)
+  # Calculate group totals for percentage calculation
+  group_totals <- df %>%
+    filter(!is.na(!!rlang::sym(current_g2))) %>%
+    group_by(!!rlang::sym(current_g2)) %>%
+    summarise(Group_Total = n(), .groups = "drop")
 
-plot_df <- df %>%
-  mutate(icd_title = str_to_title(icd_title)) %>%
-  filter(!is.na(icd_title)) %>%
-  filter(icd_title %in% overall_counts$icd_title) %>%
-  group_by(icd_title, !!rlang::sym(current_g2)) %>%
-  summarise(Count = n(), .groups = "drop") %>%
-  left_join(overall_counts, by = "icd_title") %>%
-  mutate(Rate = scales::percent(Count / Total_Count, accuracy = 0.1)) %>%
-  group_by(icd_title) %>%
-  mutate(
-    all_groups_info   = paste0(.data[[current_g2]], ": ", Count,
-                               " (", Rate, ")", collapse = "<br>"),
-    hover_text        = paste0("<b>", icd_title, "</b><br>", all_groups_info),
-    icd_title_wrapped = str_wrap(icd_title, width = 50),
-    icd_title_wrapped = factor(icd_title_wrapped, levels = ordered_levels)
-  ) %>%
-  ungroup()
+  ordered_levels <- overall_counts %>%
+    arrange(Total_Count) %>%
+    mutate(icd_title = str_to_title(icd_title),
+           icd_title_wrapped = str_wrap(icd_title, width = 50)) %>%
+    pull(icd_title_wrapped)
+
+  plot_df <- df %>%
+    mutate(icd_title = str_to_title(icd_title)) %>%
+    filter(!is.na(icd_title)) %>%
+    filter(icd_title %in% overall_counts$icd_title) %>%
+    filter(!is.na(!!rlang::sym(current_g2))) %>%
+    group_by(icd_title, !!rlang::sym(current_g2)) %>%
+    summarise(Count = n(), .groups = "drop") %>%
+    left_join(overall_counts, by = "icd_title") %>%
+    left_join(group_totals, by = current_g2) %>%
+    mutate(
+      # Percentage within the group category (not within the diagnosis bar)
+      Percentage_in_Group = scales::percent(Count / Group_Total, accuracy = 0.1),
+      # Keep original rate for reference (percentage within diagnosis)
+      Rate = scales::percent(Count / Total_Count, accuracy = 0.1)
+    ) %>%
+    group_by(icd_title) %>%
+    mutate(
+      # Hover text now shows percentage within the group category
+      all_groups_info   = paste0(.data[[current_g2]], ": ", Count,
+                                 " (", Percentage_in_Group, " of ", .data[[current_g2]], ")",
+                                 collapse = "<br>"),
+      hover_text        = paste0("<b>", icd_title, "</b><br>", all_groups_info),
+      icd_title_wrapped = str_wrap(icd_title, width = 50),
+      icd_title_wrapped = factor(icd_title_wrapped, levels = ordered_levels)
+    ) %>%
+    ungroup()
 
   list(data = plot_df, g2 = current_g2, n = top_n_val)
 }, ignoreNULL = FALSE)
@@ -675,7 +728,7 @@ output$stacked_plot <- renderPlotly({
     labs(x = NULL, y = NULL, fill = str_to_title(res$g2)) +
     theme_minimal(base_size = 12) +
     theme(
-      legend.position   = "right",  # Changed from "none" to "right"
+      legend.position   = "right",
       legend.title      = element_text(color = pal_navy, face = "bold", size = 10),
       legend.text       = element_text(color = pal_navy, size = 9),
       legend.key.size   = unit(0.6, "cm"),
@@ -685,25 +738,25 @@ output$stacked_plot <- renderPlotly({
       panel.grid.major.y = element_blank() 
     )
 
-ggplotly(p, tooltip = "text", height = 800) %>%
-  layout(
-    bargap = bargap_val,
-    title  = list(
-      text    = paste0("<b>The Distribution of Top ", res$n, " Diagnoses by ",
-                       str_to_title(res$g2), "</b>"),
-      x = 0.5, y = 0.98, xanchor = "center", yanchor = "top",
-      font = list(color = pal_navy)
-    ),
-    margin = list(t = 40, b = 60, l = 50, r = 80),
-    yaxis = list(
-  automargin = TRUE,
-  tickfont   = list(size = 11, color = pal_navy)
-),
-    legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.05),
-    paper_bgcolor = "transparent",
-    plot_bgcolor  = "transparent"
-  ) %>%
-  config(displayModeBar = FALSE)
+  ggplotly(p, tooltip = "text", height = 800) %>%
+    layout(
+      bargap = bargap_val,
+      title  = list(
+        text    = paste0("<b>The Distribution of Top ", res$n, " Diagnoses by ",
+                         str_to_title(res$g2), "</b>"),
+        x = 0.5, y = 0.98, xanchor = "center", yanchor = "top",
+        font = list(color = pal_navy)
+      ),
+      margin = list(t = 40, b = 60, l = 50, r = 80),
+      yaxis = list(
+        automargin = TRUE,
+        tickfont   = list(size = 11, color = pal_navy)
+      ),
+      legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.05),
+      paper_bgcolor = "transparent",
+      plot_bgcolor  = "transparent"
+    ) %>%
+    config(displayModeBar = FALSE)
 })
 ```
 
@@ -711,6 +764,52 @@ ggplotly(p, tooltip = "text", height = 800) %>%
 ### Slope Graph
 
 ```{r}
+fluidRow(
+  column(3,
+    div(style = "padding-right: 10px;",
+      selectInput("g2_var", "Binary Variable:",
+                  choices = c(
+                    "Gender"                   = "gender",
+                    "ESRD"                     = "end_stage_renal_disease",
+                    "Kidney Transplant Status" = "kidney_transplant_status"
+                  ),
+                  width = "100%"),
+      sliderInput("top_n_slope", "Top N:",
+                  min = 10, max = 25, value = 15, step = 5,
+                  width = "100%"),
+      actionButton("update_slope", "Apply Changes", class = "btn-primary",
+                   style = "width: 100%; margin-bottom: 16px;"),
+      hr(style = "border-color: #c8dde2; margin: 8px 0;"),
+      div(style = "background: #EEF6F8; border-left: 4px solid #2A6F7F;
+                   border-radius: 5px; padding: 12px 14px;
+                   font-size: 1.5rem; color: #1D3340; line-height: 1.6;",
+        tags$b("📝 About this chart"),
+        tags$br(),
+        "This slope graph compares the ranking of top diagnoses across two
+         groups of a selected binary variable. Connected lines show how each
+         diagnosis rank shifts between groups — solid lines indicate a rising
+         rank, dashed lines indicate a falling rank. Grey blocks indicate
+         diagnoses unique to one group, the same diagnosis is denoted by the
+         same color. Hover over blocks for count and proportion details, the proportion is calculated within the selected binary grouping. Use ",
+        tags$b("Binary Variable"), " to select the variable for comparison. Use ",
+        tags$b("Top N"), " to control how many diagnoses are shown."
+      )
+    )
+  ),
+  column(9,
+    plotlyOutput("slope_plot", height = "900px")  
+  )
+)
+```
+
+
+```{r}
+pal_contrast <- c(
+  "#E07B54", "#2A6F7F", "#E5C07B", "#7B5EA7",
+  "#56B6C2", "#C678DD", "#98C379", "#E06C75",
+  "#61AFEF", "#D4A96A", "#4CAABC", "#FF7F50"
+)
+
 plot_diagnosis_slope <- function(data, g1_var_name, g2_var_name,
                                   g1_value, top_n = 10, wrap_width = 20,
                                   block_half = 0.4,
@@ -739,6 +838,10 @@ plot_diagnosis_slope <- function(data, g1_var_name, g2_var_name,
     pull(icd_title) %>%
     unique()
 
+  n_common <- length(common_diagnoses)
+  diagnosis_colors <- setNames(rep_len(pal_contrast, n_common), common_diagnoses)
+  custom_colors <- c(diagnosis_colors, "Unique" = "#C8D8DC")
+
   page_data <- current_page %>%
     mutate(
       ycenter     = rank,
@@ -750,10 +853,6 @@ plot_diagnosis_slope <- function(data, g1_var_name, g2_var_name,
                            "Count: ", Count, "<br>",
                            "Proportion: ", sprintf("%.1f%%", prop))
     )
-
-  n_common      <- length(common_diagnoses)
-  custom_colors <- c(pal_set[seq_len(min(n_common, length(pal_set)))], "Unique" = "#C8D8DC")
-  if (n_common > 0) names(custom_colors)[1:n_common] <- common_diagnoses
 
   levels_g2 <- levels(factor(page_data %>% pull(!!g2_enquo)))
   if (length(levels_g2) < 2) return(NULL)
@@ -795,11 +894,11 @@ plot_diagnosis_slope <- function(data, g1_var_name, g2_var_name,
                   ymin = ycenter - block_half,
                   ymax = ycenter + block_half,
                   fill = color_group,
-                  text = hover_text),   
+                  text = hover_text),
               color = "white", linewidth = 0.5) +
     geom_text(data = page_data,
               aes(x = as.numeric(factor(!!g2_enquo)), y = ycenter,
-                  label = label_text),   
+                  label = label_text),
               color = "grey20", size = text_size,
               fontface = "bold", lineheight = 0.8) +
     scale_fill_manual(values  = custom_colors) +
@@ -823,45 +922,6 @@ plot_diagnosis_slope <- function(data, g1_var_name, g2_var_name,
 
   return(p)
 }
-```
-
-```{r}
-fluidRow(
-  column(3,
-    div(style = "padding-right: 10px;",
-      selectInput("g2_var", "Binary Variable:",
-                  choices = c(
-                    "Gender"                   = "gender",
-                    "ESRD"                     = "end_stage_renal_disease",
-                    "Kidney Transplant Status" = "kidney_transplant_status"
-                  ),
-                  width = "100%"),
-      sliderInput("top_n_slope", "Top N:",
-                  min = 10, max = 25, value = 15, step = 5,
-                  width = "100%"),
-      actionButton("update_slope", "Apply Changes", class = "btn-primary",
-                   style = "width: 100%; margin-bottom: 16px;"),
-      hr(style = "border-color: #c8dde2; margin: 8px 0;"),
-      div(style = "background: #EEF6F8; border-left: 4px solid #2A6F7F;
-                   border-radius: 5px; padding: 12px 14px;
-                   font-size: 1.5rem; color: #1D3340; line-height: 1.6;",
-        tags$b("📝 About this chart"),
-        tags$br(),
-        "This slope graph compares the ranking of top diagnoses across two
-         groups of a selected binary variable. Connected lines show how each
-         diagnosis rank shifts between groups — solid lines indicate a rising
-         rank, dashed lines indicate a falling rank. Grey blocks indicate
-         diagnoses unique to one group, the same diagnosis is denoted by the
-         same color. Hover over blocks for count and proportion details. Use ",
-        tags$b("Binary Variable"), " to select the variable for comparison. Use ",
-        tags$b("Top N"), " to control how many diagnoses are shown."
-      )
-    )
-  ),
-  column(9,
-    plotlyOutput("slope_plot", height = "900px")  
-  )
-)
 ```
 
 
@@ -898,8 +958,10 @@ output$slope_plot <- renderPlotly({
         font = list(color = pal_navy)
       ))
   } else {
-    ggplotly(p, tooltip = "text", height = 900) %>%
-      style(hoverinfo = "none", traces = which(sapply(ggplotly(p)$x$data, function(x) x$mode == "text"))) %>%
+    plt <- ggplotly(p, tooltip = "text", height = 900)
+
+    plt %>%
+      style(hoverinfo = "none", traces = which(sapply(plt$x$data, function(x) x$mode == "text"))) %>%
       layout(
         paper_bgcolor = "transparent",
         plot_bgcolor  = "transparent",
